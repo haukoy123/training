@@ -1,0 +1,33 @@
+version: '3.3'
+
+services:
+  php:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    depends_on: 
+      - db
+    ports:
+      - "80:80"
+    volumes:
+      - ./hhh:/var/www/html/
+      
+  db:
+    image: mysql:8.0
+    command: --default_authentication_plugin=mysql_native_password
+    environment:
+      MYSQL_DATABASE: 'btphp'
+      MYSQL_USER: tranhau
+      MYSQL_PASSWORD: haudev
+      MYSQL_ROOT_PASSWORD: hau1999
+    ports: 
+      - 6033:3306
+
+  # web:
+  #     image: nginx:latest
+  #     ports:
+  #       - "8080:80"
+  #     volumes:
+  #       - ./nginx/log:/var/log/nginx/
+  #       - ./nginx/exe.php:/var/www/html/exe.php
+  

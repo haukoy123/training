@@ -1,0 +1,32 @@
+table,
+th,
+td {
+    border: 1px solid #8a8585;
+    border-collapse: collapse;  
+}
+th,
+td {
+    padding: 15px;
+}
+
+#center{
+    margin: auto;
+    width: 100%;
+    text-align: center;
+}
+#header{
+    display: flow-root;
+    padding: 10px 0 20px 0;
+    border-bottom: 1px solid #988d8d;
+    margin-bottom: 20px;
+}
+#new{
+    float: right;
+    background: blue;
+    border: 0px;
+    color: white;
+    padding: 10px;
+    border-radius: 3px;
+    font-weight: bold;
+    float: right;
+}
