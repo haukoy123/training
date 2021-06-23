@@ -1,0 +1,9 @@
+2021/06/21 10:55:36 : ---------- Starting Demo Migration ID: 1 ----------
+2021/06/21 10:55:44 : Current categories, products, customers, orders, reviews, pages cleared
+2021/06/21 10:57:00 : Migration of Categories is completed
+2021/06/21 11:00:11 : Migration of Products is completed
+2021/06/21 11:01:34 : Migration of Customers is completed
+2021/06/21 11:04:31 : Migration of Orders is completed
+2021/06/21 11:04:31 : Migration of Reviews is completed
+2021/06/21 11:06:00 : Migration of Pages is completed
+2021/06/21 11:06:00 : Demo Migration ID: 1 completed
