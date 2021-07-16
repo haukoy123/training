@@ -80,6 +80,7 @@ class Migration(BaseController):
 		self._notice['running'] = True
 		# self._notice['step'] = 'import'
 		self._notice['resume']['process'] = 'migrating'
+
 		self.clear_stop_flag()
 		self.log_start()
 		self.save_notice(STATUS_RUN)
@@ -145,7 +146,8 @@ class Migration(BaseController):
 					self.log(result['msg'], 'process')
 				if self._next_action[action]:
 					action = self._next_action[action]
-					self._notice['resume']['action'] = action
+					# self._notice['resume']['action'] = action
+					self._notice['resume']['action'] = 'migration'
 					self.save_notice()
 				else:
 					break
@@ -882,6 +884,7 @@ class Migration(BaseController):
 	def migration(self):
 		result = self.default_result_migration()
 		current = self._notice['resume']['type']
+
 		if not current:
 			current = 'taxes'
 		self.init_cart()
@@ -893,7 +896,9 @@ class Migration(BaseController):
 			return result
 		result['result'] = 'process'
 		result['process']['next'] = current
+
 		self._notice['resume']['type'] = current
+		# self._notice['resume']['type'] = current
 		if not (self._notice['config'].get(current)):
 			next_action = self._import_next_action[current]
 			if next_action:

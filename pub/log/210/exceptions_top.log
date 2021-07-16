@@ -1,5 +1,5 @@
-2021/06/22 17:28:35 : Traceback (most recent call last):
-  File "/home/tranhau/Documents/v32/cartmigration/controllers/migration.py", line 665, in storage_data
+2021/07/05 09:52:25 : Traceback (most recent call last):
+  File "/home/tranhau/Documents/v32/cartmigration/controllers/migration.py", line 667, in storage_data
     getattr(self.get_source_cart(), 'finish_storage_data')()
   File "/home/tranhau/Documents/v32/cartmigration/models/basecart.py", line 3929, in finish_storage_data
     folder_upload = self.get_folder_upload(self._migration_id)

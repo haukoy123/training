@@ -1589,7 +1589,8 @@ class LeCartPrestashop17(LeBasecart):
 		return category['id_category']
 
 	def check_category_import(self, convert, category, categories_ext):
-		return True if self.get_map_field_by_src(self.TYPE_CATEGORY, convert['id'], convert['code']) else False
+		return True if self.get_map_field_by_src(self.TYPE_CATEGORY, convert['id'],
+												 convert['code']) else False
 
 	def router_category_import(self, convert, category, categories_ext):
 		return response_success('category_import')
@@ -1740,7 +1741,7 @@ class LeCartPrestashop17(LeBasecart):
 			# })
 			image_import_path = None
 			if self.image_exist(image_process['url']):
-				image_import_path = self.uploadImageConnector(image_process, self.add_prefix_path('c/' + to_str(category_id) + '.jpg', self._notice['target']['config']['image_category']))
+				image_import_path = self.uploadImageConnector(image_process, self.add_prefix+_path('c/' + to_str(category_id) + '.jpg', self._notice['target']['config']['image_category']))
 			# if image_import and image_import['result'] == 'success':
 			#   image_import_path = image_import['data']['img']
 			if image_import_path:

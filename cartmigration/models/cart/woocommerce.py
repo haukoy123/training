@@ -2000,6 +2000,7 @@ class LeCartWoocommerce(LeCartWordpress):
 	def get_categories_main_export(self):
 		id_src = self._notice['process']['categories']['id_src']
 		limit = self._notice['setting']['categories']
+		# self.log('hh', 'hh')
 		query = {
 			'type': 'select',
 			'query': "SELECT * FROM _DBPRF_term_taxonomy as tx LEFT JOIN _DBPRF_terms AS t ON t.term_id = tx.term_id"
@@ -2249,7 +2250,37 @@ class LeCartWoocommerce(LeCartWordpress):
 		return response_success()
 
 	def category_import(self, convert, category, categories_ext):
-		return response_success(category_term_import)
+		slug = convert['name']
+		slug= slug.lower().strip().replace(" ", "-")
+
+		terms_data = {
+			# 'id_parent': id_parent,
+			'name': convert['name'],
+			'slug': slug,
+			'term_group': 0
+		}
+		id_category = self.import_category_data_connector(
+			self.create_insert_query_connector('terms', terms_data), True, convert['id'])
+
+		taxonory_data = {
+			'term_id': id_category,
+			'description': convert['description'],
+			'parent': convert['parent']['id'],
+			'taxonomy': 'product_cat',
+		}
+
+		# self.log(taxonory_data, 'taxonory_data')
+		id_tax = self.import_category_data_connector(
+			self.create_insert_query_connector('term_taxonomy', taxonory_data), True, convert['id'])
+		# self.insert_map(self.TYPE_CATEGORY, convert['id'], id_tax, convert['code'])
+
+		if id_category:
+			self.insert_map(self.TYPE_CATEGORY, convert['id'], id_category, convert['code'])
+		else:
+			return response_error(self.warning_import_entity(self.TYPE_CATEGORY, convert['id'], convert['code']))
+
+		return response_success(id_category)
+
 
 	def get_new_trid(self):
 		query = {
@@ -3072,7 +3103,100 @@ class LeCartWoocommerce(LeCartWordpress):
 		return product['ID']
 
 	def check_product_import(self, convert, product, products_ext):
-		return self.get_map_field_by_src(self.TYPE_PRODUCT, convert['id'], convert['code'], lang = self._notice['target']['language_default'])
+
+		id_product = self.get_map_field_by_src(self.TYPE_PRODUCT, convert['id'],
+											   convert['code'], lang = self._notice['target']['language_default'])
+
+		att = convert['attributes']
+		id_wc_attr_taxo = 0
+		id_terms = 0
+		position = 0
+		data_seri={}
+		for item in att:
+			id_wc_attr_taxo = self.get_map_field_by_src('wc_attr_taxo', item['option_id'], convert['code'])
+			id_terms = self.get_map_field_by_src(item['option_code'], None, item['option_value_name'].lower())
+			id_term_taxo = 0
+			if not id_terms:
+				term_data = {
+					'name': item['option_value_name'],
+					'slug': self.sanitize_title(item['option_value_name'])
+				}
+
+				id_terms = self.import_product_data_connector(
+					self.create_insert_query_connector('terms', term_data), True, convert['id'])
+				if id_terms:
+					self.insert_map(item['option_code'], None, id_terms, item['option_value_name'].lower())
+				else:
+					return response_error(self.warning_import_entity(item['option_code'], None, item['option_value_name'].lower()))
+
+
+				term_taxonomy_data={
+					'term_id': id_terms,
+					'taxonomy': 'pa_' +item['option_code'],
+					'description': ''
+				}
+				id_term_taxo = self.import_product_data_connector(
+					self.create_insert_query_connector('term_taxonomy', term_taxonomy_data), True, convert['id'])
+
+			if id_term_taxo == 0:
+				query_term_taxonomy = {
+					'type': 'select',
+					'query': "SELECT * FROM _DBPRF_term_taxonomy WHERE term_id = " + to_str(id_terms) +' and taxonomy = "pa_' + item['option_code']+ '"'
+				}
+				term_taxo = self.select_data_connector(query_term_taxonomy, 'term_taxonomy')
+				id_term_taxo = int(term_taxo['data'][0]['term_taxonomy_id'])
+				# self.log(term_taxo, 'term_taxo')
+
+
+			self.import_product_data_connector(
+				self.create_insert_query_connector('term_relationships', {
+					'object_id': id_product, 'term_taxonomy_id': id_term_taxo
+				}), True, convert['id'])
+
+			if id_wc_attr_taxo:
+				# self.log(id_wc_attr_taxo, 'da_co')
+				pass
+			else:
+				# self.log(id_wc_attr_taxo, 'chua_co')
+				attribute_taxonomies = {
+					'attribute_name': item['option_code'],
+					'attribute_label': item['option_name'],
+					'attribute_type': item['option_type'],
+					'attribute_orderby': 'menu_order',
+					'attribute_public': 0
+				}
+				id_wc_attr_taxo = self.import_product_data_connector(
+					self.create_insert_query_connector('woocommerce_attribute_taxonomies', attribute_taxonomies), True, convert['id'])
+				if id_wc_attr_taxo:
+					self.insert_map('wc_attr_taxo', item['option_id'], id_wc_attr_taxo, convert['code'])
+				else:
+					return response_error(self.warning_import_entity('wc_attr_taxo', item['option_id'], convert['code']))
+
+
+			data = {
+				'pa_'+item['option_code']: {
+					'name': 'pa_' + item['option_code'],
+					'value': "",
+					'position': position,
+					'is_visible': 1,
+					'is_taxonomy': 1
+				}
+			}
+			position += 1
+			data_seri.update(data)
+
+		meta_value = php_serialize(data_seri)
+
+		data_postmeta = {
+			'post_id': id_product,
+			'meta_key': '_product_attributes',
+			'meta_value': meta_value
+		}
+		self.import_product_data_connector(
+			self.create_insert_query_connector('postmeta', data_postmeta), True, convert['id'])
+
+
+		return id_product
 
 	def update_latest_data_product(self, product_id, convert, product, products_ext):
 		all_query = list()
@@ -3394,10 +3518,151 @@ class LeCartWoocommerce(LeCartWordpress):
 		return response_success()
 
 	def product_import(self, convert, product, products_ext):
+		post_name = convert['name']
+		post_name = post_name.lower().strip().replace(" ", "-")
+		product_data = {
+			'post_author': 1,
+			'post_date': convert['created_at'] if convert['created_at'] else get_current_time(),
+			'post_date_gmt': convert['created_at'] if convert['created_at'] else get_current_time(),
+			'post_content': convert['description'],
+			'post_title': convert['name'],
+			'post_status': 'publish' if convert['status'] else 'draft',
+			'post_name': post_name,
+			'post_modified': convert['updated_at'] if convert['updated_at'] else get_current_time(),
+			'post_modified_gmt': convert['updated_at'] if convert['updated_at'] else get_current_time(),
+			'post_parent': 0,
+			'post_type': 'product',
+			'guid': ''
+		}
+		id_product = self.import_product_data_connector(
+			self.create_insert_query_connector('posts', product_data), True, convert['id'])
+		if id_product:
+			self.insert_map(self.TYPE_PRODUCT, convert['id'], id_product, convert['code'])
+		else:
+			return response_error(self.warning_import_entity(self.TYPE_PRODUCT, convert['id'], convert['code']))
 
-		return response_success(product_import)
+		meta_key = ['_regular_price', '_wp_old_slug', '_wc_gla_visibility',
+				   'total_sales','_tax_status', '_edit_lock', '_edit_last', '_tax_class', '_manage_stock', '_backorders', '_sold_individually',
+				   '_virtual', '_downloadable', '_download_limit', '_download_expiry','_stock',
+				   '_stock_status','_wc_average_rating', '_wc_review_count', '_product_version', '_price']
+
+		meta_value = [product['products_price'], post_name , 'sync-and-show', 0, 'taxable', '1624874533:1', '1', '', 'no','no','no', 'no',
+					 'no', '-1', '-1','','instock','0','0','5.4.1', convert['price']]
+
+		for i in range(len(meta_key)):
+			post_meta_data = {
+				'post_id': id_product,
+				'meta_value': meta_value[i],
+				'meta_key': meta_key[i]
+			}
+			id_product_meta = self.import_product_data_connector(
+				self.create_insert_query_connector('postmeta', post_meta_data), True, convert['id'])
+
+		id_category = 0
+		# self.log(convert,'convert')
+		for i in range(len(convert['categories'])):
+			if convert['categories'][i]['id'] or convert['categories'][i]['code']:
+				id_category = self.get_map_field_by_src(self.TYPE_CATEGORY, convert['categories'][i]['id'], convert['categories'][i]['code'])
+			# self.log(id_category,'id')
+			query_term_taxonomy = {
+				'type': 'select',
+				'query': "SELECT * FROM _DBPRF_term_taxonomy WHERE term_id = " + to_str(id_category)
+			}
+			term_taxonomy = self.select_data_connector(query_term_taxonomy, 'term_taxonomy')
+
+			if id_category != 0:
+				term_relationships_data = {
+					'object_id': id_product,
+					'term_taxonomy_id': int(term_taxonomy['data'][i]['term_taxonomy_id'])
+				}
+				self.import_product_data_connector(self.create_insert_query_connector(
+					'term_relationships', term_relationships_data),True, convert['id'])
+
+		return response_success(id_product)
 
 	def after_product_import(self, product_id, convert, product, products_ext):
+		# self.log(convert,'product')
+		self.import_page_data_connector(self.create_update_query_connector('posts', {'guid': 'http://localhost/wordpress/?post_type=product&#038;p='+ product_id},
+										   {'ID': product_id}))
+
+		image_id = False
+		product_image = ''
+		if convert['thumb_image']['url'] or convert['thumb_image']['path']:
+			image_process = self.process_image_before_import(convert['thumb_image']['url'], convert['thumb_image']['path'])
+			# {"url": "http://localhost/customcart/images/BSNIDESS1.39CHCOPW-100.png",
+			# "path": "BSNIDESS1.39CHCOPW100.png"}
+
+			# self.log(self._notice['target']['config'],'config')
+			#  self._notice['target']['config']['image_product'] = "wp-content/uploads/"
+
+			prefix = self.make_woocommerce_image_path(image_process['path'], self.TYPE_PRODUCT)
+			# 2021/06/BSNIDESS1.39CHCOPW100.png
+
+			prefix = self.add_prefix_path(prefix,self._notice['target']['config']['image_product'].rstrip('/'))
+			# wp-content/uploads/2021/06/BSNIDESS1.39CHCOPW100.png
+			image_import_path = self.uploadImageConnector(image_process, prefix)
+
+			if image_import_path:
+				product_image = self.remove_prefix_path(image_import_path, self._notice['target']['config']['image_product'])
+				image_details = self.get_sizes(image_process['url'])
+				image_id = self.wp_image(product_image, image_details)
+		# self.log(image_id, 'thumbnail_id')
+				postmeta = dict()
+
+			if image_id:
+				postmeta['_thumbnail_id'] = image_id
+				for meta_key, value in postmeta.items():
+					postmeta_data = {
+						'post_id': product_id,
+						'meta_key': meta_key,
+						'meta_value': value
+					}
+					self.import_page_data_connector(self.create_insert_query_connector('postmeta', postmeta_data), True, convert['id'])
+
+
+		# posts_data={
+		# 	'post_author':1,
+		# 	'guid': 'http://localhost/wordpress/wp-content/uploads/images/'+convert['thumb_image']['path'],
+		# 	'post_type': 'attachment',
+		# 	'post_mime_type': 'image/png',
+		# 	'post_parent': product_id,
+		# 	'post_date': get_current_time(),
+		# 	'post_date_gmt':get_current_time(),
+		# 	'post_status': 'inherit',
+		# 	'comment_status': 'open',
+		# 	'ping_status': 'closed',
+		# 	'post_name': convert['thumb_image']['path'][:-4],
+		# 	'post_title': convert['thumb_image']['path'][:-4],
+		# 	'post_modified': get_current_time(),
+		# 	'post_modified_gmt':get_current_time(),
+		# 	'menu_order':0,
+		# 	'comment_count':0
+		# }
+		#
+		# id_image = self.import_product_data_connector(self.create_insert_query_connector('posts',posts_data), True, convert['id'])
+		#
+		# all_query= list()
+		# all_query.append(self.create_update_query_connector('posts',
+		# 				{'guid': 'http://localhost/wordpress/?post_type=product&#038;p='+product_id}, {'ID': product_id}))
+		#
+		# post_meta={
+		# 	'post_id': id_image,
+		# 	# 'meta_key': _thumbnail_id
+		# 	'meta_key': '_wp_attached_file',
+		# 	'meta_value':'images/'+convert['thumb_image']['path']
+		# }
+		#
+		# all_query.append(self.create_insert_query_connector('postmeta',post_meta
+		# 											,convert['id']))
+		# post_meta_thumb={
+		# 	'post_id': product_id,
+		# 	'meta_key': '_thumbnail_id',
+		# 	'meta_value':id_image
+		# }
+		# all_query.append(self.create_insert_query_connector('postmeta',post_meta_thumb
+		# 											,convert['id']))
+		# self.import_multiple_data_connector(all_query, 'update_posts')
+
 		return response_success()
 
 	def addition_product_import(self, convert, product, products_ext):
@@ -3594,9 +3859,30 @@ class LeCartWoocommerce(LeCartWordpress):
 		return response_success()
 
 	def customer_import(self, convert, customer, customers_ext):
+		# self.log(convert, 'convert')
+		# self.insert_map(self.TYPE_CUSTOMER, convert['id'], customer_id, convert['code'])
+		# user_data={
+		#
+		# }
 
-		self.insert_map(self.TYPE_CUSTOMER, convert['id'], customer_id, convert['code'])
-		return response_success(customer_id)
+		customer_data = {
+			'username': convert['username'],
+			'first_name': convert['first_name'],
+			'last_name': convert['last_name'],
+			'email': convert['email'],
+			'date_registered': convert['created_at'] if convert['created_at'] else get_current_time() ,
+			'date_last_active': convert['updated_at'] if convert['updated_at'] else get_current_time(),
+			# 'country':
+		}
+		id_customer = self.import_customer_data_connector(
+			self.create_insert_query_connector('wc_customer_lookup',customer_data, True, convert['id']))
+		# self.log(id_customer, 'id_cus_1')
+		if id_customer:
+			self.insert_map(self.TYPE_CUSTOMER, convert['id'], id_customer, convert['code'])
+		else:
+			return response_error(self.warning_import_entity(self.TYPE_PRODUCT, convert['id'], convert['code']))
+
+		return response_success(id_customer)
 
 	def after_customer_import(self, customer_id, convert, customer, customers_ext):
 
@@ -4010,10 +4296,133 @@ class LeCartWoocommerce(LeCartWordpress):
 		return response_success()
 
 	def order_import(self, convert, order, orders_ext):
-		self.insert_map(self.TYPE_ORDER, convert['id'], order_id, convert['code'])
-		return response_success(order_id)
+		# self.log(convert, 'convertorder')
+		# self.log(order, 'order')
+		orders_data = {
+			'post_date': convert['created_at'],
+			'post_date_gmt': convert['created_at'],
+			'post_status': 'wc-completed' if convert['status'] == '1' else 'wc-processing',
+			'comment_status': 'closed',
+			'ping_status': 'closed',
+			'post_type': 'shop_order',
+		}
+		id_order = self.import_product_data_connector(self.create_insert_query_connector('posts', orders_data), True, convert['id'])
+		if id_order:
+			self.insert_map(self.TYPE_PRODUCT, convert['id'], id_order, convert['code'])
+		else:
+			return response_error(self.warning_import_entity(self.TYPE_PRODUCT, convert['id'], convert['code']))
+
+
+		# num_items_sold =0
+		# order_product = get_list_from_list_by_field(orders_ext['data']['orders_products'], 'orders_id', order['orders_id'])
+		# for item in order_product:
+		# 	num_items_sold += int(item['products_quantity'])
+
+		# self.log(convert['customer']['id'], 'id_cus')
+		# customer_id = 0
+		# if convert['customer'] and (convert['customer']['id'] or convert['customer']['code']):
+		# 	customer_id = self.get_map_field_by_src(self.TYPE_CUSTOMER, convert['customer']['id'], convert['customer']['code'])
+
+		# if customer_id:
+		# 	self.log(customer_id, 'id_cus_1')
+		# self.log(customer_id, 'id_cus')
+
+		# order_stats_data = {
+		# 	# 'order_id': convert['id'],
+		# 	'date_created': convert['created_at'],
+		# 	'date_created_gmt': convert['created_at'],
+		# 	'num_items_sold': num_items_sold,
+		# 	# 'status':convert['status'],
+		# 	# 'customer_id': convert['customer']['id']
+		# }
+		#
+		# id_order = self.import_order_data_connector(self.create_insert_query_connector('wc_order_stats', order_stats_data), True, convert['id'])
+		# if id_order:
+		# 	self.insert_map(self.TYPE_ORDER, convert['id'], id_order, convert['code'])
+		# else:
+		# 	return response_error(self.warning_import_entity(self.TYPE_ORDER, convert['id'], convert['code']))
+
+		return response_success(id_order)
+
+
+		# self.insert_map(self.TYPE_ORDER, convert['id'], order_id, convert['code'])
+		# return response_success(0)
 
 	def after_order_import(self, order_id, convert, order, orders_ext):
+
+		id_customer = self.get_map_field_by_src(self.TYPE_CUSTOMER,
+												convert['customer']['id'], convert['code'])
+
+
+		total = 0
+		order_total = convert['items']
+		for order_total in order_total:
+			total +=order_total['total']
+
+		oder_metadata = {
+			'_customer_user': id_customer if id_customer else 0,
+			'_order_currency': convert['currency'],
+			'_order_tax': convert['tax']['amount'] if convert['tax']['amount'] else 0,
+			'_order_total': total,
+			'_prices_include_tax': 'no',
+			'_cart_discount': convert['discount']['amount'],
+			'_cart_discount_tax': 0,
+			'_order_shipping': convert['shipping']['amount'] if convert['shipping']['amount'] else 0,
+			'_payment_method': convert['payment']['method'],
+
+			'_billing_first_name': convert['customer']['first_name'],
+			'_billing_last_name': convert['customer']['last_name'],
+			'_billing_address_1': convert['billing_address']['address_1'],
+			'_billing_address_2': convert['billing_address']['address_2'],
+			'_billing_city': convert['billing_address']['city'],
+			'_billing_state': convert['billing_address']['state']['name'],
+			'_billing_postcode': convert['billing_address']['postcode'],
+			'_billing_country': convert['billing_address']['country']['name'],
+			'_billing_company': convert['billing_address']['company'],
+			'_billing_phone': convert['billing_address']['telephone'],
+
+			'_shipping_first_name': convert['shipping_address']['first_name'],
+			'_shipping_last_name': convert['shipping_address']['last_name'],
+			'_shipping_address_1': convert['shipping_address']['address_1'],
+			'_shipping_address_2': convert['shipping_address']['address_2'],
+			'_shipping_city': convert['shipping_address']['city'],
+			'_shipping_state': convert['shipping_address']['state']['name'],
+			'_shipping_postcode': convert['shipping_address']['postcode'],
+			'_shipping_country': convert['shipping_address']['country']['name'],
+			'_shipping_company': convert['shipping_address']['company'],
+		}
+		query_postmeta = list()
+		for meta_key, value in oder_metadata.items():
+			postmeta_data = {
+				'post_id': order_id,
+				'meta_key': meta_key,
+				'meta_value': value
+			}
+			query_postmeta.append(self.create_insert_query_connector('postmeta', postmeta_data))
+
+		self.import_multiple_data_connector(query_postmeta, 'postmeta', True)
+
+
+		query_order_items = list()
+		for item in convert['items']:
+			order_items = {
+			'order_item_name' : item['product']['name'],
+			'order_item_type' : 'line_item',
+			'order_id' : order_id
+			}
+			item_insert_query = self.create_insert_query_connector('woocommerce_order_items', order_items)
+			query_order_items.append(item_insert_query)
+
+		order_items = {
+			'order_item_name': 'Shipping',
+			'order_item_type': 'shipping',
+			'order_id': order_id
+		}
+
+		query_order_items.append(self.create_insert_query_connector('woocommerce_order_items', order_items))
+		self.import_multiple_data_connector(query_order_items, 'woocommerce_order_items', True)
+
+
 		return response_success()
 
 	def addition_order_import(self, convert, order, orders_ext):

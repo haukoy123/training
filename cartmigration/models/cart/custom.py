@@ -338,23 +338,20 @@ class LeCartCustom(LeBasecart):
             'query': "SELECT * FROM  _DBPRF_categories WHERE categories_id > " + to_str(
                 id_src) + " ORDER BY categories_id ASC LIMIT " + to_str(limit)
         }
-        categories = self.select_data_connector(query)
+        categories = self.select_data_connector(query, 'categories')
         if not categories or categories['result'] != 'success':
-            return response_error('could not get manufacturers main to export')
+            return response_error('could not get categories main to export')
         return categories
 
     def get_categories_ext_export(self, categories):
         url_query = self.get_connector_url('query')
-        category_ids = duplicate_field_value_from_list(categories['data'], 'id')
+        category_ids = duplicate_field_value_from_list(categories['data'], 'categories_id')
         categories_ext_queries = {
-            'categories_description': {
+            'categories_description_lang': {
                 'type': 'select',
                 'query': "SELECT * FROM languages as lg INNER JOIN categories_description as cd" +
-                         " ON lg.languages_id = cd.language_id WHERE cd.categories_id IN " + self.list_to_in_condition(
-                    map(int, category_ids))
+                         " ON lg.languages_id = cd.language_id WHERE cd.categories_id IN " + self.list_to_in_condition(map(int, category_ids))
             },
-
-
 
             # 'categories_description': {
             #     'type': 'select',
@@ -362,21 +359,12 @@ class LeCartCustom(LeBasecart):
             #         category_ids)
             # },
 
-            # 'categories_metakeys': {
-            #     'type': 'select',
-            #     'query': "SELECT * FROM  _DBPRF_METACategories WHERE cat_id IN " + self.list_to_in_condition(
-            #         category_ids)
-            # },
-            # 'URIs': {
-            #     'type': 'select',
-            #     'query': "SELECT * FROM URIs WHERE cat_id IN " + self.list_to_in_condition(category_ids)
-            # },
             # 'cate_imgs': {
             #     'type': 'select',
             #     'query': "SELECT * FROM  _DBPRF_CSSUI_CatTree WHERE cat_id IN " + self.list_to_in_condition(category_ids)
             # },
         }
-        categories_ext = self.select_multiple_data_connector(categories_ext_queries)
+        categories_ext = self.select_multiple_data_connector(categories_ext_queries, 'categories')
 
         if not categories_ext or categories_ext['result'] != 'success':
             return response_warning()
@@ -384,6 +372,7 @@ class LeCartCustom(LeBasecart):
 
     def convert_category_export(self, category, categories_ext):
         category_data = self.construct_category()
+        lang_data = self.construct_category_lang()
         parent = self.construct_category_parent()
         parent['id'] = 0
         if category['parent_id']:
@@ -392,34 +381,31 @@ class LeCartCustom(LeBasecart):
                 parent = parent_data['data']
         category_data['id'] = category['categories_id']
         category_data['parent'] = parent
-        category_data['active'] = True if category['active']=='1' else False
-        img = get_row_from_list_by_field(categories_ext['data']['cate_imgs'],'cat_id', category['id'])
-        if img and img['image'] !='' :
-            category_data['thumb_image']['url'] = 'http://www.iemotorsport.com/mm5/'
-            category_data['thumb_image']['path'] = img['image']
-        category_data['sort_order'] = category['disp_order']
-        category_data['created_at'] = datetime.fromtimestamp(to_int(category['dt_created'])) if category['dt_created'] else '0000-00-00 00:00:00'
-        category_data['updated_at'] = datetime.fromtimestamp(to_int(category['dt_updated'])) if category['dt_updated'] else '0000-00-00 00:00:00'
-        category_description = get_row_from_list_by_field(categories_ext['data']['categories_metakeys'],'cat_id', category['id'])
-        # category_data['meta_description'] = self.strip_html_tag(category['page_title'])
-        if category_description:
-            category_data['description'] = category_description['value'] if category_description['value']!='' else  category_description['value_long']
-        else:
-            category_data['description'] = ''
-        category_data['name'] = category['name']
-        category_data['meta_title'] = category['page_title']
-        category_data['meta_keyword'] = category['code']
-        # meta_description
+        category_data['thumb_image']['url'] = 'http://localhost/customcart/images/'
+        category_data['thumb_image']['path'] = category['categories_image']
+        category_data['sort_order'] = category['sort_order']
+        category_data['created_at'] = category['date_added']
+        category_data['updated_at'] = category['last_modified']
+        category_description = get_row_from_list_by_field(categories_ext['data']['categories_description_lang'],
+                                                          'categories_id', category['categories_id'])
+        category_data['name'] = category_description['categories_name']
+
+        lang_data['name'] = category_description['name']
+        category_data['languages'] = lang_data
+
 
         category_data['category'] = category
         category_data['categories_ext'] = categories_ext
+
         if self._notice['config']['seo_301']:
             detect_seo = self.detect_seo()
             category_data['seo'] = getattr(self, 'categories_' + detect_seo)(category, categories_ext)
+
+
         return response_success(category_data)
 
     def get_category_id_import(self, convert, category, categories_ext):
-        return category['id']
+        return category['categories_id']
 
     def check_category_import(self, convert, category, categories_ext):
         id_imported = self.get_map_field_by_src(self.TYPE_CATEGORY, convert['id'], convert['code'])
@@ -452,31 +438,35 @@ class LeCartCustom(LeBasecart):
         limit = 4
         query = {
             'type': 'select',
-            'query': "SELECT * FROM  _DBPRF_products WHERE products_id > " + to_str(id_src) + " ORDER BY products_id ASC LIMIT " + to_str(limit)
+            'query': "SELECT * FROM  _DBPRF_products WHERE products_id > " + to_str(
+                id_src) + " ORDER BY products_id ASC LIMIT " + to_str(limit)
         }
-
-        products = self.get_connector_data(self.get_connector_url('query'), {'query': json.dumps(query)})
+        products = self.select_data_connector(query, 'products')
         if not products or products['result'] != 'success':
             return response_error()
         return products
 
     def get_products_ext_export(self, products):
         url_query = self.get_connector_url('query')
-        product_ids = duplicate_field_value_from_list(products['data'], 'id')
+        product_ids = duplicate_field_value_from_list(products['data'], 'products_id')
         product_id_con = self.list_to_in_condition(product_ids)
-        product_id_query = self.product_to_in_condition_seourl(product_ids)
-        manufacturer_id = duplicate_field_value_from_list(products['data'], 'manufacturers_id')
-        manufacturer_id_con = self.list_to_in_condition(manufacturer_id)
+        # self.log(product_id_con)
         product_ext_queries = {
             'product_to_category': {
                 'type': "select",
-                'query': "SELECT * FROM  _DBPRF_products_to_categories WHERE product_id IN " + product_id_con ,
+                'query': "SELECT * FROM  _DBPRF_products_to_categories WHERE products_id IN " + product_id_con ,
             },
             'products_description': {
                 'type': "select",
-                'query': "SELECT * FROM  _DBPRF_products_description WHERE product_id IN " + product_id_con , # 'product_category': {
+                'query': "SELECT * FROM  _DBPRF_products_description WHERE products_id IN " + product_id_con ,
+            },
+            'product_attribute': {
+                'type': "select",
+                'query': "SELECT * FROM attribute as att INNER JOIN product_attribute as pa "
+                         "ON att.attribute_id = pa.attribute_id  WHERE pa.product_id in " + product_id_con,
             },
 
+            # 'product_category': {
             #     'type': "select",
             #     'query': "SELECT * FROM  _DBPRF_CategoryXProduct WHERE product_id IN " + product_id_con ,
             # },
@@ -488,44 +478,18 @@ class LeCartCustom(LeBasecart):
             #     'type': "select",
             #     'query': "SELECT * FROM  _DBPRF_METAProducts WHERE product_id IN  " + product_id_con,
             # },
-            # 'URIs': {
-            #     'type': "select",
-            #     'query': "SELECT * FROM URIs WHERE product_id IN " + product_id_con,
-            # },
-
-            # 'specials': {
-            # 	'type': "select",
-            # 	'query': "SELECT * FROM _DBPRF_specials WHERE products_id IN  " + product_id_con,
-            # },
-            #
-            # 'products_to_categories': {
-            # 	'type': 'select',
-            # 	'query': "SELECT * FROM _DBPRF_products_to_categories WHERE products_id IN " + product_id_con,
-            # },
-            # 'manufacturers': {
-            # 	'type': 'select',
-            # 	'query': "SELECT manufacturers_id, manufacturers_name FROM _DBPRF_manufacturers WHERE manufacturers_id IN " + manufacturer_id_con,
-            # },
 
         }
 
-        product_ext = self.get_connector_data(url_query, {
-            'serialize': True, 'query': json.dumps(product_ext_queries)
-        })
+        product_ext = self.select_multiple_data_connector(product_ext_queries, 'products')
         if (not product_ext) or product_ext['result'] != 'success':
             return response_error()
-        image_ids=duplicate_field_value_from_list(product_ext['data']['products_images'], 'image_id')
-        image_id_con  = self.list_to_in_condition(image_ids)
-        # product_option_ids = duplicate_field_value_from_list(product_ext['data']['products_attributes'], 'options_id')
-        # option_value_ids = duplicate_field_value_from_list(product_ext['data']['products_attributes'], 'options_values_id')
-        # option_ids_con = self.list_to_in_condition(product_option_ids)
-        # option_value_ids_con = self.list_to_in_condition(option_value_ids)
 
         product_ext_rel_queries = {
-            'images': {
-                'type': 'select',
-                'query': "SELECT * FROM  _DBPRF_Images WHERE id IN " + image_id_con,
-            },
+            # 'images': {
+            #     'type': 'select',
+            #     'query': "SELECT * FROM  _DBPRF_Images WHERE id IN " + image_id_con,
+            # },
             # 'products_options_values': {
             # 	'type': 'select',
             # 	'query': "SELECT * FROM `_DBPRF_products_options_values` WHERE products_options_values_id IN " + option_value_ids_con,
@@ -538,294 +502,77 @@ class LeCartCustom(LeBasecart):
         if (not product_ext_rel) or (product_ext_rel['result'] != 'success'):
             return response_error()
         product_ext = self.sync_connector_object(product_ext, product_ext_rel)
-
+        # self.log(product_ext,'ss')
         return product_ext
 
     def convert_product_export(self, product, products_ext):
         products_ext_data = products_ext['data']
+
+        # self.log(products_ext_data, 'product_ext')
         product_data = self.construct_product()
-        product_data['id'] = product['id']
-        product_data['sku'] = product['code']
-        product_data['price'] = product['price']
-        product_data['weight'] = product['weight']
-        if to_int(product['active']) > 0:
+        product_data['id'] = product['products_id']
+        # product_data['sku'] = product['products_upc_code']
+        product_data['price'] = product['products_price']
+        product_data['weight'] = product['products_weight']
+        if to_int(product['products_status']) > 0:
             status = True
         else:
             status = False
         product_data['status'] = status
         product_data['manage_stock'] = True
-        product_data['qty'] = 9999
-        #product_data['length'] = to_decimal(product['length'])
-        #product_data['width'] = to_decimal(product['width'])
-        #product_data['height'] = to_decimal(product['height'])
-        #product_data['date_available'] = product['date_available']
-        product_data['created_at'] = datetime.fromtimestamp(to_int(product['dt_created'])) if product['dt_created'] else get_current_time()
-        product_data['updated_at'] = datetime.fromtimestamp(to_int(product['dt_updated'])) if to_int(product['dt_updated']) else product_data['created_at']
-        product_data['name'] = html.unescape(product['name'])
-        product_data['description'] = html.unescape(product['descrip'])
-        product_description = get_list_from_list_by_field(products_ext_data['products_meta'], 'product_id',product['id'])
-        # product_data['short_description'] = html.unescape(product_description_def['short_description'])
+        product_data['qty'] = product['products_quantity']
+        product_data['length'] = to_decimal(product['products_length'])
+        product_data['width'] = to_decimal(product['products_width'])
+        product_data['height'] = to_decimal(product['products_height'])
+        product_data['date_available'] = product['products_date_available']
+        product_data['created_at'] = product['products_date_added']
+        product_data['updated_at'] = product['products_last_modified']
+        product_description = get_list_from_list_by_field(products_ext_data['products_description'], 'products_id',
+                                                          product['products_id'])[0]
+        product_data['name'] = product_description['products_name']
+        product_data['description'] = html.unescape(product_description['products_description'])
+        url_product_image = 'http://localhost/customcart/images/'
 
-        if product_description:
-            meta_keywords=get_row_from_list_by_field(product_description,'name_id',1)
-            meta_description = get_row_from_list_by_field(product_description, 'name_id', 2)
-            meta_title = get_row_from_list_by_field(product_description, 'name_id', 3)
-            if meta_keywords:
-                product_data['meta_keyword'] = meta_keywords['value']
-            else:
-                product_data['meta_keyword'] = ''
-            if meta_description:
-                product_data['meta_keyword'] = meta_description['value']
-            else:
-                product_data['meta_keyword'] = ''
-            if meta_title:
-                product_data['meta_keyword'] = meta_title['value']
-            else:
-                product_data['meta_keyword'] = ''
+        product_data['thumb_image']['url'] = url_product_image
+        product_data['thumb_image']['path'] = product['products_image']
 
-        # product_data['meta_title'] = self.strip_html_tag(html.unescape(product_description_def['meta_title']))
-        # product_data['meta_description'] = product_description_def['meta_description']
-        # product_data['tags'] = product_description_def['tag']
-        # product_data['short_description'] = html.unescape(product_description_def['short_description'])
-        # product_data['meta_title'] = html.unescape(product_description_def['meta_title'])
-        # product_data['meta_description'] = product_description_def['meta_description']
-        # product_data['meta_keyword'] = product_description_def['meta_keyword']
-        # product_data['tags'] = product_description_def['tag']
-        url_product_image = 'http://www.iemotorsport.com/mm5/'
-        check_thumbnail = False
-        if product['thumbnail']!='':
-            check_thumbnail = True
-            product_data['thumb_image']['url'] = url_product_image
-            product_data['thumb_image']['path'] = product['thumbnail']
-
-
-        product_images = get_list_from_list_by_field(products_ext_data['products_images'], 'product_id',product['id'])
-        if product_images:
-            if check_thumbnail:
-                for product_image in product_images:
-                    image_data = get_row_from_list_by_field(products_ext_data['images'], 'id',product_image['image_id'])
-                    product_image_data = self.construct_product_image()
-                    if image_data :
-                        product_image_data['url'] = url_product_image
-                        product_image_data['path'] = image_data['image']
-                        product_data['images'].append(product_image_data)
-
-            else:
-                i = 0
-                for product_image in product_images:
-                    if i == 0 :
-                        image_data = get_row_from_list_by_field(products_ext_data['images'], 'id', product_image['image_id'])
-                        product_data['thumb_image']['url'] = url_product_image
-                        product_data['thumb_image']['path'] = image_data['image']
-                        i = 1
-                    else:
-                        image_data = get_row_from_list_by_field(products_ext_data['images'], 'id',product_image['image_id'])
-                        product_image_data = self.construct_product_image()
-                        if image_data :
-                            product_image_data['url'] = url_product_image
-                            product_image_data['path'] = image_data['image']
-                            product_data['images'].append(product_image_data)
-        # special = get_row_from_list_by_field(products_ext_data['specials'], 'products_id', product['products_id'])
-        # if special:
-        # 	product_data['special_price']['price'] = special['specials_new_products_price']
-        # 	product_data['special_price']['start_date'] = special['specials_date_added']
-        # 	product_data['special_price']['end_date'] = special['expires_date']
-
-        #
-        # product_data['tax']['id'] = product['products_tax_class_id']
-        # if product['manufacturers_id']:
-        # 	product_data['manufacturer']['id'] = product['manufacturers_id']
-        # 	manufacturer = get_row_from_list_by_field(products_ext_data['manufacturers'], 'manufacturers_id',
-        # 	                                          product['manufacturers_id'])
-        # 	if manufacturer:
-        # 		product_data['manufacturer']['name'] = manufacturer['manufacturers_name']
-
-
-        product_categories = get_list_from_list_by_field(products_ext_data['product_category'], 'product_id',
-                                                         product['id'])
+        product_categories = get_list_from_list_by_field(products_ext_data['product_to_category'], 'products_id',
+                                                         product['products_id'])
         if product_categories:
             for product_category in product_categories:
                 product_category_data = self.construct_product_category()
-                product_category_data['id'] = product_category['cat_id']
+                product_category_data['id'] = product_category['categories_id']
                 product_data['categories'].append(product_category_data)
 
-        # for language_id in self._notice['src']['languages_select']:
-        # 	product_description_lang = get_row_from_list_by_field(product_description, 'language_id', language_id)
-        # 	product_language_data = self.construct_product_lang()
-        # 	product_language_data['name'] = html.unescape(product_description_lang['products_name'])
-        # 	product_language_data['description'] = html.unescape(product_description_lang['products_description'])
-        # 	product_language_data['short_description'] = html.unescape(product_description_lang['products_description'])
-        # product_language_data['meta_title'] = html.unescape(product_description_lang['meta_title'])
-        # product_language_data['meta_description'] = product_description_lang['meta_description']
-        # product_language_data['meta_keyword'] = product_description_lang['meta_keyword']
-        # product_data['languages'][product_description_lang['language_id']] = product_language_data
 
-        # product_options = get_list_from_list_by_field(products_ext_data['products_attributes'], 'products_id',
-        #                                               product['products_id'])
-        # if product_options:
-        # 	childrent = list()
-        # 	childs_data = list()
-        # 	comb = self.construct_product_childrent()
-        # 	comb['name'] = product_data['name']
-        # 	comb['qty'] = product_data['qty']
-        # 	comb['sku'] = product_data['sku']
-        # 	comb['price'] = product_data['price']
-        # 	comb['languages'] = product_data['languages']
-        # 	childs_data.append(comb)
-        # 	all_product_option_values = get_list_from_list_by_field(products_ext_data['products_attributes'],
-        # 	                                                        'products_id', product['products_id'])
-        # 	check_value_exist = list()
-        # 	for option in product_options:
-        # 		option_data = self.construct_product_option()
-        # 		option_data['id'] = option['options_id']
-        # 		product_option_desc = get_list_from_list_by_field(products_ext_data['products_options'], 'products_options_id',
-        # 		                                                  option['options_id'])
-        # 		if not product_option_desc:
-        # 			continue
-        # 		product_option_def = get_row_from_list_by_field(product_option_desc, 'language_id', language_default)
-        #
-        # 		if not product_option_def:
-        # 			product_option_def = product_option_desc[0]
-        # 		option_data['option_name'] = product_option_def['products_options_name']
-        # 		option_data['option_type'] = 'select'
-        # 		#option_data['required'] = option['required']
-        #
-        # 		for product_option in product_option_desc:
-        # 			option_language_data = self.construct_product_option_lang()
-        # 			option_language_data['option_name'] = product_option['products_options_name']
-        # 			option_data['option_languages'][product_option['language_id']] = option_language_data
-        #
-        # 		product_option_values = get_list_from_list_by_field(all_product_option_values, 'options_id',
-        # 		                                                    option['options_id'])
-        # 		new_childs = list()
-        #
-        # 		for option_value in product_option_values:
-        # 			if option_value['options_values_id'] in check_value_exist:
-        # 				continue
-        # 			check_value_exist.append(option_value['options_values_id'])
-        # 			option_value_data = self.construct_product_option_value()
-        # 			option_value_data['id'] = option_value['options_values_id']
-        # 			product_option_value_description = get_list_from_list_by_field(
-        # 				products_ext_data['products_options_values'], 'products_options_values_id',
-        # 				option_value['options_values_id'])
-        # 			if not product_option_value_description:
-        # 				continue
-        # 			product_option_value_def = get_row_from_list_by_field(product_option_value_description,
-        # 			                                                      'language_id', language_default)
-        # 			if not product_option_value_def:
-        # 				product_option_value_def = product_option_value_description[0]
-        # 			option_value_data['option_value_name'] = product_option_value_def['products_options_values_name']
-        #
-        # 			for product_option_value in product_option_value_description:
-        # 				option_value_language_data = dict()
-        # 				option_value_language_data['option_value_name'] = product_option_value['products_options_values_name']
-        # 				language_id = product_option_value['language_id']
-        # 				option_value_data['option_value_languages'][language_id] = option_value_language_data
-        # 			product_attribute = get_row_from_list_by_field(product_option_values, 'options_values_id', option_value['options_values_id'])
-        # 			option_value_data['option_value_price'] = product_attribute['options_values_price']
-        # 			option_value_data['price_prefix'] = product_attribute['price_prefix']
-        #
-        # 			for child_data in childs_data:
-        # 				child = self.construct_product_childrent()
-        # 				child_attr = self.construct_product_child_attribute()
-        # 				child_attr['option_id'] = option['options_id']
-        # 				child_attr['option_type'] = 'select'
-        # 				child_attr['option_name'] = html.unescape(product_option_def['products_options_name'])
-        #
-        # 				child_attr['option_languages'] = option_data['option_languages']
-        #
-        # 				child_attr['option_value_id'] = option_value['options_values_id']
-        #
-        # 				child_attr['option_value_name'] = product_option_value_def['products_options_values_name']
-        # 				child_attr['option_value_languages'] = option_value_data['option_value_languages']
-        # 				child_attr['option_value_price'] = product_attribute['options_values_price']
-        # 				child_attr['price_prefix'] = product_attribute['price_prefix']
-        # 				child['name'] = child_data['name'] + ' - ' + option_value_data['option_value_name']
-        # 				child['sku'] = child_data['sku'] + '-' + self.join_text_to_key(
-        # 					option_value_data['option_value_name'])
-        # 				child['qty'] = child_data['qty']
-        # 				if option_value_data['price_prefix'] == '-':
-        # 					child['price'] = to_decimal(product_data['price']) - to_decimal(product_attribute['options_values_price'])
-        # 				else:
-        # 					child['price'] = to_decimal(product_data['price']) + to_decimal(product_attribute['options_values_price'])
-        # 				for lang_id, lang_data in child_data['languages'].items():
-        # 					child_language_data = dict()
-        # 					child_language_data['name'] = html.unescape(lang_data['name'])
-        # 					child_language_data['description'] = html.unescape(lang_data['description'])
-        # 					child_language_data['short_description'] = html.unescape(lang_data['short_description'])
-        # 					# child_language_data['meta_title'] = html.unescape(lang_data['meta_title'])
-        # 					# child_data['meta_description'] = lang_data.get('meta_description', '')
-        # 					# child_data['meta_keyword'] = lang_data.get('meta_keyword')
-        # 					child['languages'][lang_id] = child_language_data
-        # 				#child['attributes'] = child_data['attributes']
-        # 				child['attributes'].append(child_attr)
-        # 				del child_attr
-        # 				new_childs.append(child)
-        # 			option_data['values'].append(option_value_data)
-        # 		childs_data = new_childs
-        # 		del new_childs
-        # 		if to_len(option_data['values']) >0:
-        # 			product_data['options'].append(option_data)
-        # 	#product_data['children'] = childs_data
-        #
-        # options_src = dict()
-        # for option_each_data in product_data['options']:
-        # 	values = list()
-        # 	if option_each_data['values']:
-        # 		for value in option_each_data['values']:
-        # 			values.append(value['option_value_name'])
-        #
-        # 			opt_val = {
-        # 				'option_name': option_each_data['option_name'],
-        # 				'option_value_name': value['option_value_name'],
-        # 				'price': value['option_value_price'],
-        # 				'price_prefix': value['price_prefix'],
-        # 				'value_id': value['id'],
-        # 				'optionid': option_each_data['id'],
-        # 				'option_id': option_each_data['id']
-        # 			}
-        # 			if option_each_data['id'] not in options_src:
-        # 				options_src[option_each_data['id']] = list()
-        # 			options_src[option_each_data['id']].append(opt_val)
-        # combination = self.combination_from_multi_dict(options_src)
-        # children_base_data = copy.deepcopy(product_data)
-        # for children in combination:
-        # 	children_data = copy.deepcopy(children_base_data)
-        #
-        # 	sku = product_data['name']
-        # 	identifier_options = dict()
-        # 	for attribute in children:
-        # 		attribute_data = self.construct_product_child_attribute()
-        # 		attribute_data['option_name'] = attribute['option_name']
-        # 		attribute_data['option_code'] = attribute['option_name']
-        # 		attribute_data['option_value_name'] = attribute['option_value_name']
-        # 		attribute_data['option_value_code'] = attribute['option_value_name']
-        #
-        # 		attribute_data['price'] = attribute['price']
-        # 		attribute_data['price_prefix'] = attribute['price_prefix']
-        # 		if attribute_data['price_prefix'] == '-':
-        # 			children_data['price'] = to_decimal(product_data['price']) - to_decimal(attribute_data['price'])
-        # 		else:
-        # 			children_data['price'] = to_decimal(product_data['price']) + to_decimal(attribute_data['price'])
-        #
-        #
-        # 		children_data['attributes'].append(attribute_data)
-        # 		children_data['sku']=sku + '-'+attribute['option_value_name']
-        # 		children_data['sku']=children_data['sku'][:63]
-        # 	product_data['children'].append(children_data)
-        #
-        # if product_data['children']:
-        # 	product_data['type']='simple'
 
         if self._notice['config']['seo_301']:
             detect_seo = self.detect_seo()
             product_data['seo'] = getattr(self, 'products_' + detect_seo)(product, products_ext)
+
+
+        attribute = get_list_from_list_by_field(products_ext_data['product_attribute'], 'product_id',
+                                                         product['products_id'])
+        if attribute:
+            for attribute in attribute:
+                product_attribute = self.construct_product_attribute()
+                product_attribute['option_id'] = attribute['attribute_id']
+                product_attribute['option_type'] = attribute['attribute_type']
+                product_attribute['option_code'] = attribute['attribute_code']
+                product_attribute['option_name'] = attribute['attribute_name']
+                product_attribute['option_value_id'] = attribute['value_id']
+                product_attribute['option_value_name'] = attribute['value']
+
+                product_data['attributes'].append(product_attribute)
+
+        # self.log(product_data, 'attributes')
         return response_success(product_data)
 
     def get_product_id_import(self, convert, product, products_ext):
         return product['products_id']
 
     def check_product_import(self, convert, product, products_ext):
+        # self.log('hhelo','hello')
         return True if self.get_map_field_by_src(self.TYPE_PRODUCT, convert['id'], convert['code']) else False
 
     def router_product_import(self, convert, product, products_ext):
@@ -863,14 +610,14 @@ class LeCartCustom(LeBasecart):
             'query': "SELECT * FROM  _DBPRF_customers WHERE customers_id > " + to_str(id_src) + " ORDER BY customers_id ASC LIMIT " + to_str(limit)
         }
 
-        customers = self.get_connector_data(self.get_connector_url('query'), {'query': json.dumps(query)})
+        customers = self.select_data_connector(query, 'customers')
         if not customers or customers['result'] != 'success':
             return response_error('could not get customers main to export')
         return customers
 
     def get_customers_ext_export(self, customers):
         url_query = self.get_connector_url('query')
-        customers_ids = duplicate_field_value_from_list(customers['data'], 'id')
+        customers_ids = duplicate_field_value_from_list(customers['data'], 'customers_id')
         customer_ext_queries = {
             'address_book': {
                 'type': 'select',
@@ -881,75 +628,40 @@ class LeCartCustom(LeBasecart):
                 'query': "SELECT * FROM  _DBPRF_customers_info WHERE customers_info_id IN " + self.list_to_in_condition(customers_ids),
             },
         }
-        customers_ext = self.get_connector_data(url_query,{'serialize': True, 'query': json.dumps(customer_ext_queries)})
+        customers_ext = self.select_multiple_data_connector(customer_ext_queries, 'customers')
         if not customers_ext or customers_ext['result'] != 'success':
             return response_error()
-        country_ids = duplicate_field_value_from_list(customers_ext['data']['address_book'], 'cntry')
-        zone_ids = duplicate_field_value_from_list(customers_ext['data']['address_book'], 'state')
+        country_ids = duplicate_field_value_from_list(customers_ext['data']['address_book'], 'entry_country_id')
         customers_ext_rel_queries = {
             'countries': {
                 'type': 'select',
-                'query': "SELECT * FROM countries WHERE alpha IN  " + self.list_to_in_condition(country_ids),
+                'query': "SELECT * FROM countries WHERE countries_id IN  " + self.list_to_in_condition(country_ids),
             },
-            'zones': {
-                'type': 'select',
-                'query': "SELECT * FROM  _DBPRF_zones WHERE zone_id IN " + self.list_to_in_condition(zone_ids),
-            }
         }
-        customers_ext_rel = self.get_connector_data(url_query,
-                                                    {'serialize': True, 'query': json.dumps(customers_ext_rel_queries)})
+        customers_ext_rel = self.select_multiple_data_connector(customers_ext_rel_queries, 'customers')
         if not customers_ext_rel or customers_ext_rel['result'] != 'success':
-            return response_error()
+            return response_error('err customers ext rel data')
         customers_ext = self.sync_connector_object(customers_ext, customers_ext_rel)
         return customers_ext
 
     def convert_customer_export(self, customer, customers_ext):
-        #customer_data = self.construct_customer()
-        customer_data = {
-            'phone': '',
-            'id': None,
-            'code': None,
-            'site_id': '',
-            'group_id': '',
-            'language_id': '',
-            'username': '',
-            'email': '',
-            'password': '',
-            'first_name': '',
-            'middle_name': '',
-            'last_name': '',
-            'gender': '',
-            'dob': '',
-            'is_subscribed': False,
-            'active': True,
-            'capabilities': list(),
-            'created_at': None,
-            'updated_at': get_current_time(),
-            'address': list(),
-            'groups': list(),
-            'balance': 0.00,
-            'user_url' : ''
-        }
+        customer_data = self.construct_customer()
         customer_data['id'] = customer['customers_id']
-        #customer_data['group_id'] = customer['customer_group_id']
         customer_data['username'] = customer['customers_email_address']
         customer_data['email'] = customer['customers_email_address']
-        customer_data['password'] = customer['password']
+        customer_data['password'] = customer['customers_password']
         customer_data['first_name'] = customer['customers_firstname']
         customer_data['last_name'] = customer['customers_lastname']
         customer_data['gender'] = 'Male' if customer['customers_gender'].strip() == 'm' else 'Female'
-        # customer_data['dob'] = customer['customers_dob']
-        # customer_data['is_subscribed'] = customer['customers_newsletter']
         customer_data['telephone'] = customer['customers_telephone']
         customer_data['fax'] = customer['customers_fax']
         customer_data['active'] = True
+        customers_info = get_list_from_list_by_field(customers_ext['data']['customers_info'], 'customers_info_id', customer['customers_id'])[0]
+        if customers_info:
+            customer_data['created_at'] = customers_info['customers_info_date_account_created']
+            customer_data['updated_at'] = customers_info['customers_info_date_account_last_modified']
 
-        # customer_info = get_row_from_list_by_field(customers_ext['data']['customers_info'], 'customers_info_id', customer['customers_id'])
-        # if customer_info:
-        # 	customer_data['created_at'] = customer_info['customers_info_date_account_created']
-        # 	customer_data['updated_at'] = customer_info['customers_info_date_account_last_modified']
-        # if customer_data['dob'] == '0000-00-00 00:00:00' :
-        # 	customer_data['dob']=customer_data['created_at']
+
         address_books = get_list_from_list_by_field(customers_ext['data']['address_book'], 'customers_id', customer['customers_id'])
         if address_books:
             for address_book in address_books:
@@ -960,39 +672,28 @@ class LeCartCustom(LeBasecart):
                 address_data['gender'] = 'Male' if address_book['entry_gender'].strip() == 'm' else 'Female'
                 address_data['address_1'] = address_book['entry_street_address']
                 address_data['address_2'] = ''
-                # address_data['address_1'] = get_value_by_key_in_dict(address_book, 'addr', '')
-                # address_data['address_2'] = get_value_by_key_in_dict(address_book, 'add2', '')
                 address_data['city'] = address_book['entry_city']
                 address_data['postcode'] = address_book['entry_postcode']
                 address_data['telephone'] = customer['customers_telephone']
                 address_data['company'] = address_book['entry_company']
                 address_data['fax'] = customer['customers_fax']
-                country = get_row_from_list_by_field(customers_ext['data']['countries'], 'alpha', address_book['entry_country_id'])
+                country = get_row_from_list_by_field(customers_ext['data']['countries'], 'countries_id', address_book['entry_country_id'])
                 if country:
                     address_data['country']['id'] = country['countries_id']
-                    address_data['country']['country_code'] = country['alpha']
+                    # address_data['country']['country_code'] = country['alpha']
                     address_data['country']['name'] = country['countries_name']
                 else:
                     address_data['country']['id'] = address_book['entry_country_id']
-                state_id = address_book['state']
-                if state_id:
-                    state = get_row_from_list_by_field(customers_ext['data']['states'], 'code', state_id)
-                    if state:
-                        address_data['state']['id'] = state['code']
-                        address_data['state']['state_code'] = state['code']
-                        address_data['state']['name'] = state['name']
-                    else:
-                        address_data['state']['id'] = state_id
-                else:
-                    address_data['state']['name'] = 'AL'
-                # if address_book['address_book_id'] == customer['customers_default_address_id']:
-                address_data['default']['billing'] = True
-                address_data['default']['shipping'] = True
+
+                if address_book['address_book_id'] == customer['customers_default_address_id']:
+                    address_data['default']['billing'] = True
+                    address_data['default']['shipping'] = True
                 customer_data['address'].append(address_data)
+
         return response_success(customer_data)
 
     def get_customer_id_import(self, convert, customer, customers_ext):
-        return customer['id']
+        return customer['customers_id']
 
     def check_customer_import(self, convert, customer, customers_ext):
         return True if self.get_map_field_by_src(self.TYPE_CUSTOMER, convert['id'], convert['code']) else False
@@ -1027,251 +728,121 @@ class LeCartCustom(LeBasecart):
             'query': "SELECT * FROM  _DBPRF_orders WHERE orders_id > " + to_str(
                 id_src) + " ORDER BY orders_id ASC LIMIT " + to_str(limit)
         }
-        orders = self.get_connector_data(self.get_connector_url('query'), {'query': json.dumps(query)})
+        orders = self.select_data_connector(query, 'orders')
         if not orders or orders['result'] != 'success':
             return response_error('could not get orders main to export')
         return orders
 
     def get_orders_ext_export(self, orders):
         url_query = self.get_connector_url('query')
-        order_ids = duplicate_field_value_from_list(orders['data'], 'id')
-        bil_country = duplicate_field_value_from_list(orders['data'], 'bill_cntry')
-        delivery_country = duplicate_field_value_from_list(orders['data'], 'ship_cntry')
-        country_ids = set(bil_country + delivery_country )
-
-        payment_zone = duplicate_field_value_from_list(orders['data'], 'bill_state')
-        shipping_zone = duplicate_field_value_from_list(orders['data'], 'ship_state')
-        # cus_zone = duplicate_field_value_from_list(orders['data'], 'customers_state')
-        state_ids = set(payment_zone + shipping_zone)
-        cus_ids=duplicate_field_value_from_list(orders['data'], 'cust_id')
+        order_ids = duplicate_field_value_from_list(orders['data'], 'orders_id')
         orders_ext_queries = {
             'orders_products': {
                 'type': 'select',
-                'query': "SELECT * FROM  _DBPRF_orders_products WHERE order_id IN " + self.list_to_in_condition(order_ids)
+                'query': "SELECT * FROM  _DBPRF_orders_products WHERE orders_id IN " + self.list_to_in_condition(order_ids)
             },
             'orders_total': {
                 'type': 'select',
-                'query': "SELECT * FROM  _DBPRF_orders_total WHERE order_id IN " + self.list_to_in_condition(order_ids)
+                'query': "SELECT * FROM  _DBPRF_orders_total WHERE orders_id IN " + self.list_to_in_condition(order_ids)
             },
-
-            # 'order_items': {
-            #     'type': 'select',
-            #     'query': "SELECT * FROM  _DBPRF_OrderItems WHERE order_id IN " + self.list_to_in_condition(order_ids)
-            # },
-            # 'orders_customer': {
-            #     'type': 'select',
-            #     'query': "SELECT * FROM ` _DBPRF_CustomerAddresses` WHERE cust_id IN " + self.list_to_in_condition(cus_ids)
-            # },
-            # 'orders_payment': {
-            #     'type': 'select',
-            #     'query': "SELECT * FROM  _DBPRF_OrderPayments WHERE order_id  IN " + self.list_to_in_condition(order_ids)
-            # },
-            # 'orders_status_history': {
-            # 	'type': 'select',
-            # 	'query': "SELECT * FROM _DBPRF_orders_status_history"
-            # },
-            # 'orders_status_history': {
-            # 	'type': 'select',
-            # 	'query': "SELECT *  FROM _DBPRF_orders_status_history WHERE orders_id IN  " + self.list_to_in_condition(
-            # 		order_ids) + " ORDER BY orders_status_history_id DESC"
-            # },
-            # 'countries': {
-            #     'type': 'select',
-            #     'query': "SELECT * FROM countries WHERE alpha IN " + self.list_to_in_condition(country_ids)
-            # },
-            #
-            # 'zones': {
-            #     'type': 'select',
-            #     'query': "SELECT * FROM  _DBPRF_States WHERE code IN " + self.list_to_in_condition(state_ids)
-            # }
         }
-        orders_ext = self.get_connector_data(url_query, {'serialize': True, 'query': json.dumps(orders_ext_queries)})
+        orders_ext = self.select_multiple_data_connector(orders_ext_queries,'orders')
         if not orders_ext or orders_ext['result'] != 'success':
             return response_error()
         return orders_ext
 
     def convert_order_export(self, order, orders_ext):
         order_data = self.construct_order()
-        order_data['id'] = order['id']
-        order_data['status'] = order['status']
-
-        # order_total = get_list_from_list_by_field(orders_ext['data']['orders_total'], 'orders_id', order[
-        # 	'orders_id'])
-        # ot_tax = get_row_from_list_by_field(order_total, 'class', 'ot_tax')
-        # ot_shipping = get_row_from_list_by_field(order_total, 'class', 'ot_shipping')
-        # ot_subtotal = get_row_from_list_by_field(order_total, 'class', 'ot_subtotal')
-        # ot_total = get_row_from_list_by_field(order_total, 'class', 'ot_total')
-        # if ot_tax:
-        # 	order_data['tax']['title'] = ot_tax['title']
-        # 	order_data['tax']['amount'] = ot_tax['value']
-        # 	if ot_subtotal:
-        # 		order_data['tax']['percent'] = to_decimal(ot_tax['value']) / to_decimal(ot_subtotal['value'])
-        order_data['tax']['title'] = 'Tax'
-        order_data['tax']['amount'] = get_value_by_key_in_dict(order, 'total_tax', 0.0000)
-        order_data['shipping']['title'] = 'Shipping'
-        order_data['shipping']['amount'] = get_value_by_key_in_dict(order, 'total_ship', 0.0000)
-        order_data['discount']['title'] = 'Discount'
-        order_data['discount']['amount'] = 0.0000
-        order_data['total']['title'] = 'Total'
-        order_data['total']['amount'] = get_value_by_key_in_dict(order, 'total', 0.0000)
-        order_data['subtotal']['title'] = 'Total products'
-        order_data['subtotal']['amount'] = get_value_by_key_in_dict(order, 'total', 0.0000)
-        order_data['currency'] = ''
-        order_data['created_at'] = datetime.fromtimestamp(to_int(get_value_by_key_in_dict(order, 'orderdate', 0))).strftime('%Y-%m-%d %H:%M:%S')
-        order_data['updated_at'] = get_current_time()
-
-
-        #currency = get_row_value_from_list_by_field(orders_ext['data']['currencies'], 'code', order['currency'], 'currencies_id')
-        # order_data['currency'] = order['currency']
-        # order_data['currency_value'] = order['currency_value']
-        # order_data['created_at'] = order['date_purchased']
-        # order_data['updated_at'] = order['last_modified']
+        order_data['id'] = order['orders_id']
+        order_data['status'] = order['orders_status']
+        # currency = get_row_value_from_list_by_field(orders_ext['data']['currencies'], 'code', order['currency'], 'currencies_id')
+        order_data['currency'] = order['currency']
+        order_data['currency_value'] = order['currency_value']
+        order_data['created_at'] = order['date_purchased']
+        order_data['updated_at'] = order['last_modified']
 
         order_customer = self.construct_order_customer()
         #order_customer = self.add_c(order_customer)
-        order_customer['id'] = order['cust_id']
-        order_customer['email'] = order['ship_email']
-        customer_name = order['ship_fname'] + ' ' + order['ship_lname']
-        order_customer['first_name'] = order['ship_fname']
-        order_customer['last_name'] = order['ship_lname']
+        order_customer['id'] = order['client_customers_id']
+        order_customer['email'] = order['customers_email']
+        # customer_name = order['ship_fname'] + ' ' + order['ship_lname']
+        name = order['delivery_name'].strip().split()
+        order_customer['username'] = name
+        order_customer['first_name'] = name[0]
+        order_customer['last_name'] = name[-1]
         order_data['customer'] = order_customer
 
         customer_address = self.construct_order_address()
-        #customer_address = self.addConstructDefault(customer_address)
-        customer_address['first_name'] = order['ship_fname']
-        customer_address['last_name'] = order['ship_lname']
-        customer_address['address_1'] = order['ship_addr']
-        customer_address['address_2'] = order['ship_addr2']
-        customer_address['city'] = order['ship_city']
-        customer_address['postcode'] = order['ship_zip']
-        customer_address['telephone'] = order['ship_phone']
-        customer_address['company'] = order['ship_comp']
-
-        customer_country = get_row_from_list_by_field(orders_ext['data']['countries'], 'alpha', order['bill_cntry'])
-        if customer_country:
-            customer_address['country']['id'] = customer_country['id']
-            customer_address['country']['country_code'] = customer_country['alpha']
-            customer_address['country']['name'] = customer_country['name']
-
-        customer_state = get_row_from_list_by_field(orders_ext['data']['zones'], 'code', order['ship_state'])
-        if customer_state:
-            customer_address['state']['id'] = customer_state['code']
-            customer_address['state']['state_code'] = customer_state['code']
-            customer_address['state']['name'] = customer_state['name']
-
-
+        delivery_name = order['delivery_name'].strip().split()
+        customer_address['username'] = delivery_name
+        customer_address['first_name'] = delivery_name[0]
+        customer_address['last_name'] = delivery_name[-1]
+        customer_address['middle_name'] = order['delivery_name'].strip().strip(delivery_name[0]).strip(delivery_name[-1]).strip()
+        customer_address['address_1'] = order['delivery_address1']
+        customer_address['address_2'] = order['delivery_address2']
+        customer_address['city'] = order['delivery_city']
+        customer_address['postcode'] = order['delivery_postcode']
+        customer_address['telephone'] = order['customers_telephone']
+        customer_address['company'] = order['delivery_company']
+        customer_address['country']['name'] = order['delivery_country']
+        customer_address['state']['name'] = order['delivery_state']
         order_data['customer_address'] = customer_address
 
         order_billing = self.construct_order_address()
-        #order_billing = this->addConstructDefault(order_billing)
-        billing_name = self.get_name_from_string(order['bill_fname'] + ' '+ order['bill_lname'])
-        order_billing['first_name'] = order['bill_fname']
-        order_billing['last_name'] = order['bill_lname']
-        order_billing['address_1'] = order['bill_addr']
-        order_billing['address_2'] = order['bill_addr2']
-        order_billing['city'] = order['bill_city']
-        order_billing['postcode'] = order['bill_zip']
-        order_billing['telephone'] = order['bill_phone']
-        order_billing['company'] = order['bill_comp']
-        billing_country = get_row_from_list_by_field(orders_ext['data']['countries'], 'alpha', order['bill_cntry'])
-        if billing_country:
-            order_billing['country']['id'] = billing_country['id']
-            order_billing['country']['code'] = billing_country['alpha']
-            order_billing['country']['country_code'] = billing_country['alpha']
-            order_billing['country']['name'] = billing_country['name']
-
-
-        billing_state = get_row_from_list_by_field(orders_ext['data']['zones'], 'code', order[
-            'bill_state'])
-        if billing_state:
-            order_billing['state']['id'] = billing_state['code']
-            order_billing['state']['state_code'] = billing_state['code']
-            order_billing['state']['name'] = billing_state['name']
+        billing_name = order['billing_name'].strip().split()
+        order_billing['username'] = delivery_name
+        order_billing['first_name'] = delivery_name[0]
+        order_billing['last_name'] = delivery_name[-1]
+        order_billing['middle_name'] = order['billing_name'].strip().strip(delivery_name[0]).strip(delivery_name[-1]).strip()
+        order_billing['address_1'] = order['billing_address1']
+        order_billing['address_2'] = order['billing_address2']
+        order_billing['city'] = order['billing_city']
+        order_billing['postcode'] = order['billing_postcode']
+        order_billing['telephone'] = order['customers_telephone']
+        order_billing['company'] = order['billing_company']
+        order_billing['country']['name'] = order['billing_country']
+        order_billing['state']['name'] = order['billing_state']
         order_data['billing_address'] = order_billing
 
-
-
         order_delivery = self.construct_order_address()
-        #order_delivery = self.addConstructDefault(order_delivery)
-        delivery_name = self.get_name_from_string(order['ship_fname'] + ' ' + order['ship_lname'])
-        order_delivery['first_name'] = order['ship_fname']
-        order_delivery['last_name'] = order['ship_lname']
-        order_delivery['address_1'] = order['ship_addr']
-        order_delivery['address_2'] = order['ship_addr2']
-        order_delivery['city'] = order['ship_city']
-        order_delivery['postcode'] = order['ship_zip']
-        order_delivery['telephone'] = order['ship_phone']
-        order_delivery['company'] = order['ship_comp']
-
-        delivery_country = get_row_from_list_by_field(orders_ext['data']['countries'], 'alpha', order['ship_cntry'])
-        if delivery_country:
-            order_delivery['country']['id'] = delivery_country['id']
-            order_delivery['country']['code'] = delivery_country['alpha']
-            order_delivery['country']['country_code'] = delivery_country['alpha']
-            order_delivery['country']['name'] = delivery_country['name']
-        delivery_state = get_row_from_list_by_field(orders_ext['data']['zones'], 'code', order['ship_state'])
-        if delivery_state:
-            order_delivery['state']['id'] = delivery_state['code']
-            order_delivery['state']['state_code'] = delivery_state['code']
-            order_delivery['state']['name'] = delivery_state['name']
-
+        order_delivery['address_1'] = order['delivery_address1']
+        order_delivery['address_2'] = order['delivery_address2']
+        order_delivery['city'] = order['delivery_city']
+        order_delivery['postcode'] = order['delivery_postcode']
+        order_delivery['telephone'] = order['customers_telephone']
+        order_delivery['company'] = order['delivery_company']
+        order_delivery['country']['name'] = order['delivery_country']
+        order_delivery['state']['name'] = order['delivery_state']
 
         order_delivery = self._cook_shipping_address_by_billing(order_delivery, order_billing)
         order_data['shipping_address'] = order_delivery
-        payments = get_row_from_list_by_field(orders_ext['data']['orders_payment'], 'order_id', order['id'])
-        order_payment = self.construct_order_payment()
-        order_payment['title'] = 'Payment'
-        order_data['payment'] = order_payment
 
-        order_products = get_list_from_list_by_field(orders_ext['data']['order_items'], 'order_id', order['id'])
-        # order_product_attributes = get_list_from_list_by_field(orders_ext['data']['orders_products_attributes'], 'orders_id', order['orders_id'])
-        order_items = list()
-        for order_product in order_products:
-            order_item_subtotal = to_decimal(order_product['price']) * to_decimal(order_product['quantity'])
-            order_item_tax = to_decimal(order_item_subtotal) * to_decimal(8.250) / 100
-            order_item_total = to_decimal(order_item_subtotal) + to_decimal(order_item_tax)
-            order_item = self.construct_order_item()
-            #order_item = self.addConstructDefault(order_item)
-            order_item['id'] = order_product['line_id']
-            order_item['product']['id'] = order_product['product_id']
-            order_item['product']['name'] = order_product['name']
-            order_item['product']['sku'] = order_product['code']
-            order_item['qty'] = order_product['quantity']
-            order_item['price'] = order_product['price']
-            order_item['original_price'] = order_product['base_price']
-            # order_item['tax_amount'] = order_item_tax
-            # order_item['tax_percent'] = order_product['products_tax']
-            order_item['discount_amount'] = '0.0000'
-            order_item['discount_percent'] = '0.0000'
-            order_item['subtotal'] = order_item_subtotal
-            order_item['total'] = order_item_subtotal
-            # order_item_attributes = get_list_from_list_by_field(order_product_attributes, 'orders_products_id',order_product['orders_products_id'])
-            # if order_item_attributes:
-            # 	order_item_options = list()
-            # 	for order_product_attribute in order_item_attributes:
-            # 		order_item_option = self.construct_order_item_option()
-            # 		order_item_option['option_name'] = order_product_attribute['products_options']
-            # 		order_item_option['option_value_name'] = order_product_attribute['products_options_values']
-            # 		order_item_option['price'] = order_product_attribute['options_values_price']
-            # 		order_item_option['price_prefix'] = order_product_attribute['price_prefix']
-            # 		order_item_options.append(order_item_option)
-            #
-            # 	order_item['options'] = order_item_options
 
-            order_items.append(order_item)
-        order_data['items'] = order_items
+        # self.log(orders_ext,'orders_ext_1')
+        order_product = get_list_from_list_by_field(orders_ext['data']['orders_products'], 'orders_id', order['orders_id'])
+        # self.log(order_product,'order_product_2')
+        items = list()
+        if order_product:
+            for order_product in order_product:
+                order_item = self.construct_order_item()
+                order_item['id'] = order_product['orders_products_id']
+                # order_item['code'] = order_product['products_upc_code']
+                order_item['product']['id'] = order_product['orders_products_id']
+                order_item['product']['name']= order_product['products_name']
+                order_item['qty'] = order_product['products_quantity']
+                order_item['price'] = order_product['products_price']
+                order_item['original_price'] = order_product['final_price']
+                order_item['discount_amount'] = '0.0000'
+                order_item['discount_percent'] = '0.0000'
+                subtotal = to_decimal(order_product['products_price']) * to_decimal(order_product['products_quantity'])
+                tax = to_decimal(subtotal) * to_decimal(8.250) / 100
+                order_item['subtotal'] = to_decimal(order_product['products_price']) * to_decimal(order_product['products_quantity'])
+                order_item['total'] = to_decimal(subtotal) + to_decimal(tax)
+                items.append(order_item)
 
-        # order_status_history = get_list_from_list_by_field(orders_ext['data']['orders_status_history'], 'orders_id', order['orders_id'])
-        # order_history = list()
-        # for orders_status_history in order_status_history:
-        # 	order_history = self.construct_order_history()
-        # 	order_history['id'] = orders_status_history['orders_status_history_id']
-        # 	order_history['status'] = orders_status_history['orders_status_id']
-        # 	order_history['comment'] = orders_status_history['comments']
-        # 	order_history['notified'] = orders_status_history['customer_notified']
-        # 	order_history['created_at'] = orders_status_history['date_added']
-        # 	order_data['history'].append(order_history)
-        #
+            order_data['items'] = items
+
+
         return response_success(order_data)
 
     def get_order_id_import(self, convert, order, orders_ext):
@@ -1643,8 +1214,6 @@ class LeCartCustom(LeBasecart):
                 seo_cate['default'] = True
                 seo_cate['type'] = type_seo
                 result.append(seo_cate)
-
-
         return result
 
     def products_default_seo(self, product, products_ext):

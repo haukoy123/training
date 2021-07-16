@@ -1684,7 +1684,8 @@ class LeCartShopify(LeBasecart):
 
 	def check_product_import(self, convert, product, products_ext):
 
-		return True if self.get_map_field_by_src(self.TYPE_PRODUCT, convert['id'], convert['code']) else None
+		return True if self.get_map_field_by_src(self.TYPE_PRODUCT, convert['id'],
+												 convert['code']) else None
 
 	def update_latest_data_product(self, product_id, convert, product, products_ext):
 		product_import = self.get_map_field_by_src(self.TYPE_PRODUCT, convert['id'], convert['code'])
